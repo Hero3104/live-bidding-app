@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: bidding-postgres
+    environment:
+      POSTGRES_USER: bidding_user
+      POSTGRES_PASSWORD: bidding_pass
+      POSTGRES_DB: bidding_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./database/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bidding_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bidding-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: bidding-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bidding-network
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: bidding-server
+    environment:
+      NODE_ENV: development
+      PORT: 5000
+      DATABASE_URL: postgresql://bidding_user:bidding_pass@postgres:5432/bidding_db
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: your_jwt_secret_key_change_in_production
+      JWT_EXPIRY: 7d
+      CORS_ORIGIN: http://localhost:3000
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./server/src:/app/src
+    networks:
+      - bidding-network
+    command: npm run dev
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: bidding-client
+    environment:
+      REACT_APP_API_URL: http://localhost:5000
+      REACT_APP_SOCKET_URL: http://localhost:5000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - server
+    volumes:
+      - ./client/src:/app/src
+    networks:
+      - bidding-network
+    command: npm start
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  bidding-network:
+    driver: bridge
