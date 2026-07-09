@@ -1,0 +1,57 @@
+# Render Blueprint — deploys the whole stack from this repo in one step.
+# In Render: New -> Blueprint -> select this repo -> Render reads this file.
+# All services below are configured on the free plan, suitable for a short-lived event.
+
+databases:
+  - name: bidding-db
+    plan: free
+    databaseName: bidding_db
+    user: bidding_user
+
+services:
+  - type: keyvalue
+    name: bidding-redis
+    plan: free
+    ipAllowList: []
+
+  - type: web
+    name: bidding-server
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: bidding-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: bidding-redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRY
+        value: 7d
+      - key: CORS_ORIGIN
+        value: https://bidding-client.onrender.com
+
+  - type: web
+    name: bidding-client
+    runtime: static
+    plan: free
+    rootDir: client
+    buildCommand: npm install && npm run build
+    staticPublishPath: build
+    envVars:
+      - key: REACT_APP_API_URL
+        value: https://bidding-server.onrender.com
+      - key: REACT_APP_SOCKET_URL
+        value: https://bidding-server.onrender.com
