@@ -1,20 +1,41 @@
-import { Request, Response, NextFunction } from 'express';
-import { AppError } from '../utils/errors';
+import { NextFunction, Request, Response } from 'express';
 import logger from '../utils/logger';
 
-export const errorHandler = (err: Error, req: Request, res: Response, next: NextFunction) => {
-  logger.error('Error occurred', err);
+export interface AuthenticatedRequest extends Request {
+  user?: {
+    id: string;
+    email: string;
+    username: string;
+    role: string;
+  };
+}
 
-  if (err instanceof AppError) {
-    return res.status(err.statusCode).json({
-      success: false,
-      message: err.message,
-      details: err.details,
-    });
+class AppError extends Error {
+  constructor(
+    public statusCode: number,
+    message: string
+  ) {
+    super(message);
   }
+}
 
-  return res.status(500).json({
+export const errorHandler = (err: any, req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const statusCode = err.statusCode || err.status || 500;
+  const message = err.message || 'Internal Server Error';
+
+  logger.error(`Error: ${message}`, { statusCode, path: req.path });
+
+  res.status(statusCode).json({
     success: false,
-    message: 'Internal server error',
+    message,
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
   });
 };
+
+export const asyncHandler = (fn: Function) => {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+};
+
+export { AppError };
